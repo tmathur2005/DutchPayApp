@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GoDutch - Receipt Splitter</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      max-width: 600px;
+      margin: auto;
+    }
+
+    h1 {
+      text-align: center;
+    }
+
+    .section {
+      margin: 20px 0;
+    }
+
+    video {
+      width: 100%;
+      max-height: 300px;
+      display: none;
+    }
+
+    #preview {
+      margin-top: 10px;
+      max-width: 100%;
+      display: none;
+    }
+
+    .result {
+      margin-top: 20px;
+    }
+
+    .people-section {
+      margin-top: 20px;
+      display: none;
+    }
+
+    .description-section {
+      margin-top: 20px;
+      display: none;
+    }
+  </style>
+</head>
+
+<body>
+
+  <h1>GoDutch! - Split Your Receipt</h1>
+
+  <form method="POST" action="/upload" enctype="multipart/form-data">
+
+    <div id="step-1">
+      <h3>First: submit the receipt that needs splitting</h3>
+      <br>
+
+      <input type="file" id="upload-receipt" name="upload-receipt" accept="image/*" />
+
+      <h3>-------- OR --------</h3>
+
+      <button type="button" onclick="startCamera()">Start Camera</button>
+      <video id="video" autoplay playsinline></video><br>
+      <button type="button" id="captureBtn" onclick="capturePhoto()" style="display: none;">Take Photo</button>
+      <canvas id="canvas" style="display:none;"></canvas>
+      <img id="preview" alt="Captured Receipt Preview" />
+
+      <input type="file" id="manual-capture" name="capture-receipt" accept="image/*" style="display: none;" />
+
+      <button id="next-btn" type="button" onclick="nextPage()">Next</button>
+    </div>
+
+    <div style="display: none;" id="step-2">
+
+      <h3>Next: How many people are splitting the bill?</h3>
+      <p>Add people to the tab and describe what they ordered. </p>
+
+      <label for="num-people">Number of people:</label>
+      <input id="num-people" name="num-people" type="number" required>
+      <button type="button" onclick="generatePeople()">select</button>
+
+      <br><br>
+      <div id="people">
+
+      </div>
+      <br><br>
+
+      <label for="tip">How much was the tip?</label>
+      <input type="text" name="tip" required>
+
+      <input type="submit" value="Start splitting!">
+
+    </div>
+
+  </form>
+
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const preview = document.getElementById('preview');
+    const captureBtn = document.getElementById('captureBtn');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const peopleSection = document.getElementById('peopleSection');
+    const descriptionSection = document.getElementById('descriptionSection');
+    const personDescriptions = document.getElementById('personDescriptions');
+
+    // JS Functions
+
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+        await video.play();
+        video.style.display = 'block';
+        captureBtn.style.display = 'inline-block';
+      } catch (err) {
+        alert('Camera access error: ' + err.message);
+        console.error('Camera error:', err);
+      }
+    }
+
+    async function capturePhoto() {
+      const context = canvas.getContext('2d');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      const file = new File([blob], 'captured_receipt.png', { type: 'image/png' });
+
+      const captureInput = document.getElementById('manual-capture');
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(file);
+      captureInput.files = dataTransfer.files;
+
+      const src = URL.createObjectURL(blob);
+      preview.src = src
+      preview.style.display = 'block';
+
+      console.log(src)
+
+      // put it into input tag 
+      if (src.startsWith("data:")) {
+        document.getElementById('manual-capture').value = src;
+      } else {
+        // Otherwise, convert it to a data URL
+        const blob = await fetch(src).then(res => res.blob());
+        const reader = new FileReader();
+
+        const base64Promise = new Promise(resolve => {
+          reader.onloadend = () => resolve(reader.result);
+          reader.readAsDataURL(blob);
+        });
+
+        const dataUrl = await base64Promise;
+        document.getElementById('manual-capture').value = dataUrl;
+      }
+    }
+
+    function nextPage() {
+      const uploadFiles = document.getElementById("upload-receipt").files;
+      const captureFiles = document.getElementById("manual-capture").files;
+
+      console.log("upload-receipt files:", uploadFiles)
+      console.log("manual-capture files:", captureFiles)
+
+      if (uploadFiles.length > 0 && captureFiles.length > 0) {
+        err = document.createElement("p")
+        err.innerText = "error: cannot upload two images - must choose between upload and manual capture"
+        err.style.color = 'red'
+        document.getElementById("step-1").appendChild(err)
+      }
+      else if (uploadFiles.length === 0 && captureFiles.length === 0) {
+        err = document.createElement("p")
+        err.innerText = "error: must provide an image of a receipt - either upload or take a picture"
+        err.style.color = 'red'
+        document.getElementById("step-1").appendChild(err)
+      }
+      else {
+        document.getElementById("step-1").style.display = "none"
+        document.getElementById("step-2").style.display = "inline-block"
+      }
+    }
+
+    function generatePeople() {
+
+      console.log('here')
+      const num = document.getElementById("num-people").value
+      const div = document.getElementById("people")
+
+      console.log(num)
+
+      // remove all input tags from previous attempts 
+      while (div.firstChild) {
+        div.removeChild(div.firstChild);
+      }
+
+      // add new input tags for each person 
+      let i = 0
+      while (i < num) {
+        console.log(i)
+        let name = document.createElement("input")
+        name.name = "person-" + (i + 1).toString() + "-name"
+        name.type = "text"
+        name.required = true
+        name.placeholder = "person name"
+
+        div.appendChild(name)
+
+        let desc = document.createElement("input")
+        desc.name = "person-" + (i + 1).toString() + "-desc"
+        desc.type = "text"
+        desc.required = true
+        desc.placeholder = "items ordered"
+
+        div.appendChild(desc)
+
+        div.appendChild(document.createElement("br"))
+
+        i++
+      }
+
+    }
+
+  </script>
+</body>
+
+</html>
